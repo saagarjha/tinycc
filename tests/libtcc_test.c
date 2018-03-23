@@ -15,7 +15,7 @@ int add(int a, int b)
     return a + b;
 }
 
-/* this strinc is referenced by the generated code */
+/* this string is referenced by the generated code */
 const char hello[] = "Hello World!";
 
 char my_program[] =
