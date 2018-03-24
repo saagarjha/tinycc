@@ -833,6 +833,9 @@ LIBTCCAPI TCCState *tcc_new(void)
 # if defined(__OpenBSD__)
     tcc_define_symbol(s, "__OpenBSD__", "__OpenBSD__");
 # endif
+# if defined(__APPLE__)
+    tcc_define_symbol(s, "__APPLE__", "__APPLE__");
+#endif
 #endif
 
     /* TinyCC & gcc defines */

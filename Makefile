@@ -46,7 +46,6 @@ else
  NATIVE_TARGET = $(ARCH)
  ifdef CONFIG_OSX
   NATIVE_TARGET = $(ARCH)-osx
-  LDFLAGS += -flat_namespace -undefined warning
   export MACOSX_DEPLOYMENT_TARGET := 10.2
  endif
 endif
@@ -91,20 +90,33 @@ TCCDOCS = tcc.1 tcc-doc.html tcc-doc.info
 all: $(PROGS) $(TCCLIBS) $(TCCDOCS)
 
 # cross compiler targets to build
-TCC_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm-wince c67
+TCC_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-osx arm-wince c67
 # TCC_X += arm-fpa arm-fpa-ld arm-vfp arm-eabi
 
 # cross libtcc1.a targets to build
-LIBTCC1_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm-wince
+LIBTCC1_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-osx arm-wince
+
+# cross libtcc.so targets to build
+LIBTCC_X = i386 x86_64 i386-win32 x86_64-win32 x86_64-osx arm arm64 arm64-osx arm-wince
 
 PROGS_CROSS = $(foreach X,$(TCC_X),$X-tcc$(EXESUF))
 LIBTCC1_CROSS = $(foreach X,$(LIBTCC1_X),$X-libtcc1.a)
+LIBTCC_CROSS = $(foreach X,$(LIBTCC_X),$X-libtcc$(DLLSUF))
+ifeq ($(CONFIG_static),no)
+ LIBTCC_CROSS = $(foreach X,$(LIBTCC_X),$X-libtcc$(DLLSUF))
+else
+ LIBTCC_CROSS = $(foreach X,$(LIBTCC_X),$X-libtcc.a)
+endif
 
 # build cross compilers & libs
-cross: $(LIBTCC1_CROSS) $(PROGS_CROSS)
+cross: $(LIBTCC_CROSS) $(LIBTCC1_CROSS) $(PROGS_CROSS)
 
 # build specific cross compiler & lib
-cross-%: %-tcc$(EXESUF) %-libtcc1.a ;
+ifeq ($(CONFIG_static),no)
+ cross-%: %-tcc$(EXESUF) %-libtcc1.a %-libtcc$(DLLSUF);
+else
+ cross-%: %-tcc$(EXESUF) %-libtcc1.a %-libtcc.a;
+endif
 
 install: ; @$(MAKE) --no-print-directory install$(CFGWIN)
 install-strip: ; @$(MAKE) --no-print-directory install$(CFGWIN) CONFIG_strip=yes
@@ -165,6 +177,7 @@ x86_64-osx_FILES = $(x86_64_FILES)
 arm_FILES = $(CORE_FILES) arm-gen.c arm-link.c arm-asm.c
 arm-wince_FILES = $(arm_FILES) tccpe.c
 arm64_FILES = $(CORE_FILES) arm64-gen.c arm64-link.c
+arm64-osx_FILES = $(arm64_FILES)
 c67_FILES = $(CORE_FILES) c67-gen.c c67-link.c tcccoff.c
 
 # libtcc sources
@@ -215,6 +228,10 @@ libtcc.so: $(LIBTCC_OBJ)
 libtcc.so: CFLAGS+=-fPIC
 libtcc.so: LDFLAGS+=-fPIC
 
+# macOS dynamic libtcc library
+libtcc.dylib: $(LIBTCC_OBJ)
+	$(CC) -shared -o $@ $^ $(LDFLAGS)
+
 # windows dynamic libtcc library
 libtcc.dll : $(LIBTCC_OBJ)
 	$(CC) -shared -o $@ $^ $(LDFLAGS)
@@ -232,6 +249,20 @@ libtcc1.a : tcc$(EXESUF) FORCE
 # Cross libtcc1.a
 %-libtcc1.a : %-tcc$(EXESUF) FORCE
 	@$(MAKE) -C lib DEFINES='$(DEF-$*)' CROSS_TARGET=$*
+
+# Cross static libtcc library
+%-libtcc.a: $(LIBTCC_OBJ)
+	$(AR) rcs $@ $^
+
+# Cross dynamic libtcc library
+%-libtcc.so: $(LIBTCC_OBJ)
+	$(CC) -shared -Wl,-soname,$@ -o $@ $^ $(LDFLAGS)
+
+%-libtcc.so: CFLAGS+=-fPIC
+%-libtcc.so: LDFLAGS+=-fPIC
+
+%-libtcc.dylib: $(LIBTCC_OBJ)
+	$(CC) -shared -o $@ $^ $(LDFLAGS)
 
 .PRECIOUS: %-libtcc1.a
 FORCE:
