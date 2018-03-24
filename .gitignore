@@ -5,6 +5,8 @@
 *.a
 *.exe
 *.dll
+*.so
+*.dylib
 *.obj
 *.pdb
 *.lib
