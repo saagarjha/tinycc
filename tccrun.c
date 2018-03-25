@@ -52,6 +52,15 @@ static void *win64_add_function_table(TCCState *s1);
 static void win64_del_function_table(void *);
 #endif
 
+#ifndef PAGESIZE
+# if defined(__APPLE__) && (defined(TCC_TARGET_ARM) || defined(TCC_TARGET_ARM64))
+// Newer versions of iOS have a 16 KB page size.
+#  define PAGESIZE 16384
+# else
+#  define PAGESIZE 4096
+# endif
+#endif
+
 /* ------------------------------------------------------------- */
 /* Do all relocations (needed before using tcc_get_symbol())
    Returns -1 on error. */
@@ -89,6 +98,8 @@ LIBTCCAPI int tcc_relocate(TCCState *s1, void *ptr)
     ptr = tcc_malloc(size);
 #endif
     tcc_relocate_ex(s1, ptr, ptr_diff); /* no more errors expected */
+    // Needed so that we can mprotect the memory back to how it should be
+    dynarray_add(&s1->runtime_mem, &s1->nb_runtime_mem, (void*)(addr_t)size);
     dynarray_add(&s1->runtime_mem, &s1->nb_runtime_mem, ptr);
     return 0;
 }
@@ -106,6 +117,16 @@ ST_FUNC void tcc_run_free(TCCState *s1)
 #ifdef _WIN64
         win64_del_function_table(*(void**)s1->runtime_mem[i]);
 #endif
+        unsigned size = (unsigned)s1->runtime_mem[i++];
+        // We're setting the protections of the entire runtime memory, rather
+        // than just the executable portion, back to read/write. It's a bit
+        // heavy handed, but it should work.
+        addr_t start, end;
+        start = (addr_t)s1->runtime_mem[i] & ~(PAGESIZE - 1);
+        end = (addr_t)s1->runtime_mem[i] + size;
+        end = (end + PAGESIZE - 1) & ~(PAGESIZE - 1);
+        if (mprotect((void *)start, end - start, PROT_READ | PROT_WRITE))
+            tcc_error("mprotect failed: did you mean to configure --with-selinux?");
         tcc_free(s1->runtime_mem[i]);
 #endif
     }
@@ -282,16 +303,14 @@ static void set_pages_executable(void *ptr, unsigned long length)
     void __clear_cache(void *beginning, void *end);
 # ifndef HAVE_SELINUX
     addr_t start, end;
-#  ifndef PAGESIZE
-#   define PAGESIZE 4096
-#  endif
     start = (addr_t)ptr & ~(PAGESIZE - 1);
     end = (addr_t)ptr + length;
     end = (end + PAGESIZE - 1) & ~(PAGESIZE - 1);
-    if (mprotect((void *)start, end - start, PROT_READ | PROT_WRITE | PROT_EXEC))
+    if (mprotect((void *)start, end - start, PROT_READ | PROT_EXEC))
         tcc_error("mprotect failed: did you mean to configure --with-selinux?");
 # endif
-# if defined TCC_TARGET_ARM || defined TCC_TARGET_ARM64
+# if (defined TCC_TARGET_ARM || defined TCC_TARGET_ARM64) && !defined(__APPLE__)
+    // Not needed on Apple chips
     __clear_cache(ptr, (char *)ptr + length);
 # endif
 #endif

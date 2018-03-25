@@ -895,6 +895,13 @@ LIBTCCAPI TCCState *tcc_new(void)
 
 LIBTCCAPI void tcc_delete(TCCState *s1)
 {
+    // This is done first because we need to mprotect the pages that the runtime
+    // memory is on back to being writable.
+    #ifdef TCC_IS_NATIVE
+        /* free runtime memory */
+        tcc_run_free(s1);
+    #endif
+
     tcc_cleanup();
 
     /* free sections */
@@ -921,11 +928,6 @@ LIBTCCAPI void tcc_delete(TCCState *s1)
     dynarray_reset(&s1->target_deps, &s1->nb_target_deps);
     dynarray_reset(&s1->pragma_libs, &s1->nb_pragma_libs);
     dynarray_reset(&s1->argv, &s1->argc);
-
-#ifdef TCC_IS_NATIVE
-    /* free runtime memory */
-    tcc_run_free(s1);
-#endif
 
     tcc_free(s1);
     if (0 == --nb_states)
